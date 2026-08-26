@@ -37,7 +37,7 @@ export const MapViewport: React.FC<MapViewportProps> = ({ onMapReady }) => {
     }
   }, [activeTrip, durationSec, preset, animationMode, cameraMovement, zoomLevel]);
 
-  // Initialize MapLibre map instance
+  // Initialize MapLibre map instance with high-performance tile caching
   useEffect(() => {
     if (!mapContainerRef.current || !activeTrip) return;
 
@@ -55,6 +55,9 @@ export const MapViewport: React.FC<MapViewportProps> = ({ onMapReady }) => {
       bearing: 0,
       preserveDrawingBuffer: true,
       attributionControl: false,
+      renderWorldCopies: false,
+      fadeDuration: 0, // Eliminates tile fade-in delay for instant smooth rendering
+      maxTileCacheSize: 500, // Keep loaded tiles in memory
     };
 
     const map = new maplibregl.Map(mapOptions);
@@ -62,6 +65,19 @@ export const MapViewport: React.FC<MapViewportProps> = ({ onMapReady }) => {
     map.on('load', () => {
       mapRef.current = map;
       if (onMapReady) onMapReady(map);
+
+      // Preload & warm cache for entire route bounds
+      try {
+        map.fitBounds(
+          [
+            [activeTrip.bounds[0], activeTrip.bounds[1]],
+            [activeTrip.bounds[2], activeTrip.bounds[3]],
+          ],
+          { padding: 40, duration: 0 }
+        );
+      } catch (e) {
+        // Ignore fitBounds fallback
+      }
 
       // Add full future route layer (faint)
       const fullCoords = activeTrip.points.map((p: RouteSample) => [p.coordinate.lng, p.coordinate.lat]);
@@ -158,7 +174,7 @@ export const MapViewport: React.FC<MapViewportProps> = ({ onMapReady }) => {
         },
       });
 
-      // Initial camera jump
+      // Jump to initial camera position
       if (engine) {
         const initialState = engine.evaluate(0);
         map.jumpTo({
@@ -176,7 +192,7 @@ export const MapViewport: React.FC<MapViewportProps> = ({ onMapReady }) => {
     };
   }, [activeTrip, preset.basemapStyle, animationMode]);
 
-  // Playback requestAnimationFrame render loop
+  // Smooth requestAnimationFrame Playback render loop
   useEffect(() => {
     if (!engine || !activeTrip) return;
 
@@ -200,7 +216,7 @@ export const MapViewport: React.FC<MapViewportProps> = ({ onMapReady }) => {
       const state = engine.evaluate(timeSec);
       setCurrentState(state);
 
-      // Update MapLibre camera
+      // Update MapLibre camera smoothly
       if (mapRef.current && mapRef.current.isStyleLoaded()) {
         const map = mapRef.current;
 
