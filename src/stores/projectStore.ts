@@ -12,6 +12,7 @@ interface ProjectState {
   activeTrip: NormalizedTrip | null;
   animationMode: AnimationMode;
   cameraMovement: CameraMovement;
+  zoomLevel: number; // -1 to +2 (default +0.4 = +25% closer)
   activePresetId: PresetId;
   preset: VisualPreset;
   durationSec: number;
@@ -26,6 +27,7 @@ interface ProjectState {
   selectTrip: (id: string) => void;
   setAnimationMode: (mode: AnimationMode) => void;
   setCameraMovement: (movement: CameraMovement) => void;
+  setZoomLevel: (zoom: number) => void;
   setPreset: (presetId: PresetId) => void;
   setDurationSec: (dur: number) => void;
   setFps: (fps: number) => void;
@@ -43,6 +45,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   activeTrip: null,
   animationMode: 'simple',
   cameraMovement: 'steady',
+  zoomLevel: 0.4, // +20-25% closer by default
   activePresetId: 'clean-minimal',
   preset: VISUAL_PRESETS['clean-minimal'],
   durationSec: 15,
@@ -87,6 +90,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   setCameraMovement: (cameraMovement) => set({ cameraMovement }),
+  setZoomLevel: (zoomLevel) => set({ zoomLevel }),
   setPreset: (presetId) => {
     const preset = VISUAL_PRESETS[presetId] || VISUAL_PRESETS['clean-minimal'];
     set({ activePresetId: presetId, preset });

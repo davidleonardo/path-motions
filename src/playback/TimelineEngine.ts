@@ -12,19 +12,22 @@ export class TimelineEngine {
   private defaultPitch: number;
   private animationMode: AnimationMode;
   private cameraMovement: CameraMovement;
+  private zoomOffset: number;
 
   constructor(
     trip: NormalizedTrip,
     totalDurationSec: number = 15,
     defaultPitch: number = 0,
     animationMode: AnimationMode = 'simple',
-    cameraMovement: CameraMovement = 'steady'
+    cameraMovement: CameraMovement = 'steady',
+    zoomOffset: number = 0.4
   ) {
     this.trip = trip;
     this.totalDurationSec = Math.max(5, totalDurationSec);
     this.defaultPitch = defaultPitch;
     this.animationMode = animationMode;
     this.cameraMovement = cameraMovement;
+    this.zoomOffset = zoomOffset;
     this.scenes = SceneDirector.generateScenes(trip, this.totalDurationSec);
   }
 
@@ -61,7 +64,7 @@ export class TimelineEngine {
     // Sample route geometry
     const sample = sampleRouteAtProgress(this.trip.points, routeProgress, true);
 
-    // Evaluate camera state
+    // Evaluate camera state with +20% closer zoom offset
     const camera = CameraDirector.evaluateCamera(
       this.trip,
       routeProgress,
@@ -69,7 +72,8 @@ export class TimelineEngine {
       sceneProgress,
       this.defaultPitch,
       this.animationMode,
-      this.cameraMovement
+      this.cameraMovement,
+      this.zoomOffset
     );
 
     // Determine active place visit

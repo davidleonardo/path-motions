@@ -1,7 +1,6 @@
 ﻿import { NormalizedTrip, PlaceVisit } from '../domain/timeline';
 import { segmentPointsIntoTrip } from '../geo/segmentation';
-import { detectTimelineFormat } from './detectTimelineFormat';
-import { parseGoogleTimelineOnDevice, parseCoordinateString, parseTimestamp, RawParsedPoint } from './GoogleTimelineAdapter';
+import { parseCoordinateString, parseTimestamp, RawParsedPoint } from './GoogleTimelineAdapter';
 import { parseGoogleTakeoutRecords } from './GoogleTakeoutAdapter';
 
 export interface ParseResult {
@@ -11,102 +10,135 @@ export interface ParseResult {
 }
 
 export function normalizeTimelineJson(jsonData: any, fileName?: string): ParseResult {
-  const format = detectTimelineFormat(jsonData);
+  if (!jsonData || typeof jsonData !== 'object') {
+    throw new Error('Invalid JSON file format.');
+  }
 
-  let rawPoints: RawParsedPoint[] = [];
-  let explicitVisits: PlaceVisit[] = [];
+  const segments = jsonData.semanticSegments || jsonData.timelineObjects || (Array.isArray(jsonData) ? jsonData : null);
 
-  if (format === 'google-timeline-on-device' || jsonData.semanticSegments || jsonData.rawSignals || jsonData.timelineObjects) {
-    const parsed = parseGoogleTimelineOnDevice(jsonData);
-    rawPoints = parsed.points;
-    explicitVisits = parsed.visits;
-  } else if (format === 'google-takeout-records') {
-    rawPoints = parseGoogleTakeoutRecords(jsonData);
-  } else if (Array.isArray(jsonData)) {
-    jsonData.forEach((item, idx) => {
-      const coord = parseCoordinateString(item.point || item.latLng || item.position) ||
-        (item.lat !== undefined && item.lng !== undefined ? { lat: Number(item.lat), lng: Number(item.lng) } : null) ||
-        (item.latitudeE7 && item.longitudeE7 ? { lat: item.latitudeE7 / 1e7, lng: item.longitudeE7 / 1e7 } : null);
+  // If it's a modern Google Timeline format with semanticSegments or timelineObjects
+  if (segments && Array.isArray(segments)) {
+    const tripsByDate = new Map<string, { date: string; points: RawParsedPoint[]; visits: PlaceVisit[] }>();
+    let totalPoints = 0;
 
-      const ts = parseTimestamp(item.time || item.timestamp || item.timestampMs) || (Date.now() + idx * 1000);
-      if (coord && ts) {
-        rawPoints.push({ lat: coord.lat, lng: coord.lng, timestampMs: ts, source: 'array' });
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i];
+      if (!seg) continue;
+
+      const startTime = seg.startTime || (seg.timelinePath && seg.timelinePath[0]?.time);
+      if (!startTime) continue;
+
+      const dateKey = typeof startTime === 'string' && startTime.length >= 10 ? startTime.slice(0, 10) : '2026-01-01';
+
+      let trip = tripsByDate.get(dateKey);
+      if (!trip) {
+        trip = { date: dateKey, points: [], visits: [] };
+        tripsByDate.set(dateKey, trip);
       }
-    });
-  }
 
-  if (rawPoints.length === 0) {
-    throw new Error('No valid location coordinates found in this file. Please verify this is a Google Timeline or Takeout JSON export.');
-  }
-
-  // Sort by time
-  rawPoints.sort((a, b) => a.timestampMs - b.timestampMs);
-
-  // Deduplicate points with identical timestamps or extreme proximity
-  const uniquePoints: RawParsedPoint[] = [];
-  let lastPoint: RawParsedPoint | null = null;
-
-  for (const p of rawPoints) {
-    if (!lastPoint || p.timestampMs !== lastPoint.timestampMs || Math.abs(p.lat - lastPoint.lat) > 0.00005 || Math.abs(p.lng - lastPoint.lng) > 0.00005) {
-      uniquePoints.push(p);
-      lastPoint = p;
-    }
-  }
-
-  // Group into journeys/trips by time gap (> 4 hours gap or > 50km distance gap starts a new trip)
-  const tripGroups: RawParsedPoint[][] = [];
-  let currentGroup: RawParsedPoint[] = [uniquePoints[0]];
-
-  for (let i = 1; i < uniquePoints.length; i++) {
-    const curr = uniquePoints[i];
-    const prev = uniquePoints[i - 1];
-    const timeGapHours = (curr.timestampMs - prev.timestampMs) / 3600000;
-
-    if (timeGapHours > 4) {
-      if (currentGroup.length >= 4) {
-        tripGroups.push(currentGroup);
+      // 1. timelinePath
+      if (Array.isArray(seg.timelinePath)) {
+        for (const item of seg.timelinePath) {
+          if (!item) continue;
+          const c = parseCoordinateString(item.point || item.latLng || item.position);
+          const ts = parseTimestamp(item.time || item.timestamp);
+          if (c && ts) {
+            trip.points.push({ lat: c.lat, lng: c.lng, timestampMs: ts, source: 'timelinePath' });
+            totalPoints++;
+          }
+        }
       }
-      currentGroup = [curr];
-    } else {
-      currentGroup.push(curr);
+
+      // 2. visit
+      if (seg.visit || seg.placeVisit) {
+        const v = seg.visit || seg.placeVisit;
+        const loc =
+          v.topCandidate?.placeLocation?.latLng ||
+          (v.location?.latitudeE7 ? `${v.location.latitudeE7 / 1e7}, ${v.location.longitudeE7 / 1e7}` : null) ||
+          v.location?.latLng;
+
+        const c = parseCoordinateString(loc);
+        const startMs = parseTimestamp(seg.startTime || v.duration?.startTimestamp);
+        const endMs = parseTimestamp(seg.endTime || v.duration?.endTimestamp);
+
+        if (c && startMs) {
+          trip.points.push({ lat: c.lat, lng: c.lng, timestampMs: startMs, source: 'visit' });
+          trip.visits.push({
+            id: `v-${startMs}`,
+            name: v.topCandidate?.semanticType || v.location?.name || 'Visited Location',
+            coordinate: c,
+            arrivalMs: startMs,
+            departureMs: endMs || startMs + 15 * 60000,
+            durationMs: endMs ? Math.max(0, endMs - startMs) : 15 * 60000,
+            source: 'timeline',
+          });
+          totalPoints++;
+        }
+      }
+
+      // 3. activity / activitySegment
+      if (seg.activity || seg.activitySegment) {
+        const act = seg.activity || seg.activitySegment;
+        const startLoc = act.start?.latLng || (act.startLocation?.latitudeE7 ? `${act.startLocation.latitudeE7 / 1e7}, ${act.startLocation.longitudeE7 / 1e7}` : null);
+        const endLoc = act.end?.latLng || (act.endLocation?.latitudeE7 ? `${act.endLocation.latitudeE7 / 1e7}, ${act.endLocation.longitudeE7 / 1e7}` : null);
+
+        const startCoord = parseCoordinateString(startLoc);
+        const endCoord = parseCoordinateString(endLoc);
+        const startMs = parseTimestamp(seg.startTime || act.duration?.startTimestamp);
+        const endMs = parseTimestamp(seg.endTime || act.duration?.endTimestamp);
+
+        if (startCoord && startMs) {
+          trip.points.push({ lat: startCoord.lat, lng: startCoord.lng, timestampMs: startMs, source: 'activity-start' });
+          totalPoints++;
+        }
+        if (endCoord && endMs) {
+          trip.points.push({ lat: endCoord.lat, lng: endCoord.lng, timestampMs: endMs, source: 'activity-end' });
+          totalPoints++;
+        }
+      }
     }
-  }
 
-  if (currentGroup.length >= 4) {
-    tripGroups.push(currentGroup);
-  } else if (tripGroups.length === 0) {
-    tripGroups.push(uniquePoints);
-  }
+    // Filter non-empty valid days (at least 3 points)
+    const validTrips = Array.from(tripsByDate.values())
+      .filter((t) => t.points.length >= 3)
+      .sort((a, b) => b.date.localeCompare(a.date)); // Sort newest date first
 
-  // Order trips from most recent to oldest
-  tripGroups.sort((a, b) => b[0].timestampMs - a[0].timestampMs);
+    if (validTrips.length === 0) {
+      throw new Error('No valid location coordinates found in this file.');
+    }
 
-  // Limit candidate trips to top 50 meaningful trips for performance
-  const candidateGroups = tripGroups.slice(0, 50);
-
-  const trips = candidateGroups.map((group, idx) => {
-    const startDate = new Date(group[0].timestampMs).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
+    // Convert top 60 recent journey days into normalized trips
+    const candidateTrips = validTrips.slice(0, 60).map((t) => {
+      const d = new Date(t.date + 'T00:00:00');
+      const dateFormatted = d.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      });
+      const title = `Timeline — ${dateFormatted}`;
+      return segmentPointsIntoTrip(t.points, title, t.visits);
     });
-    const defaultTitle = fileName
-      ? `${fileName.replace(/\.[^/.]+$/, '')} — ${startDate}`
-      : `Journey #${idx + 1} (${startDate})`;
 
-    // Filter relevant visits for this trip time range
-    const tripStart = group[0].timestampMs;
-    const tripEnd = group[group.length - 1].timestampMs;
-    const tripVisits = explicitVisits.filter(
-      (v) => v.arrivalMs >= tripStart - 3600000 && v.departureMs <= tripEnd + 3600000
-    );
+    return {
+      trips: candidateTrips,
+      format: 'Google Timeline (semanticSegments)',
+      totalPointsParsed: totalPoints,
+    };
+  }
 
-    return segmentPointsIntoTrip(group, defaultTitle, tripVisits);
-  });
+  // Legacy Google Takeout Records.json
+  if (jsonData.locations && Array.isArray(jsonData.locations)) {
+    const rawPoints = parseGoogleTakeoutRecords(jsonData);
+    if (rawPoints.length === 0) {
+      throw new Error('No valid location points found in Records.json');
+    }
+    const singleTrip = segmentPointsIntoTrip(rawPoints.slice(0, 2000), fileName || 'Takeout Records Journey');
+    return {
+      trips: [singleTrip],
+      format: 'Google Takeout Records.json',
+      totalPointsParsed: rawPoints.length,
+    };
+  }
 
-  return {
-    trips,
-    format: format === 'unknown' ? 'Google Timeline on-device' : format,
-    totalPointsParsed: uniquePoints.length,
-  };
+  throw new Error('Unrecognized timeline format. Please upload a Google Timeline.json or Records.json file.');
 }

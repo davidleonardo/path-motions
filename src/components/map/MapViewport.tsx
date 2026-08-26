@@ -15,7 +15,7 @@ export const MapViewport: React.FC<MapViewportProps> = ({ onMapReady }) => {
   const mapRef = useRef<maplibregl.Map | null>(null);
   const hudCanvasRef = useRef<HTMLCanvasElement>(null);
 
-  const { activeTrip, preset, durationSec, aspectRatio, showSocialGuides, animationMode, cameraMovement } = useProjectStore();
+  const { activeTrip, preset, durationSec, aspectRatio, showSocialGuides, animationMode, cameraMovement, zoomLevel } = useProjectStore();
   const { isPlaying, currentTimeSec, playbackSpeed, setCurrentTimeSec, setCurrentState, setIsPlaying } = usePlaybackStore();
 
   const [engine, setEngine] = useState<TimelineEngine | null>(null);
@@ -30,11 +30,12 @@ export const MapViewport: React.FC<MapViewportProps> = ({ onMapReady }) => {
         durationSec,
         animationMode === 'simple' ? 0 : preset.defaultPitch,
         animationMode,
-        cameraMovement
+        cameraMovement,
+        zoomLevel
       );
       setEngine(eng);
     }
-  }, [activeTrip, durationSec, preset, animationMode, cameraMovement]);
+  }, [activeTrip, durationSec, preset, animationMode, cameraMovement, zoomLevel]);
 
   // Initialize MapLibre map instance
   useEffect(() => {
@@ -49,7 +50,7 @@ export const MapViewport: React.FC<MapViewportProps> = ({ onMapReady }) => {
       container: mapContainerRef.current,
       style: preset.basemapStyle,
       center: [activeTrip.center.lng, activeTrip.center.lat],
-      zoom: 12,
+      zoom: 12.5 + zoomLevel,
       pitch: animationMode === 'simple' ? 0 : preset.defaultPitch,
       bearing: 0,
       preserveDrawingBuffer: true,

@@ -1,5 +1,5 @@
 ﻿import React from 'react';
-import { Palette, Clock, Smartphone, Monitor, Square, Sliders, Eye, Sparkles, Compass, Type } from 'lucide-react';
+import { Palette, Clock, Smartphone, Monitor, Square, Sliders, Eye, Sparkles, Compass, Type, ZoomIn } from 'lucide-react';
 import { useProjectStore, CameraMovement } from '../../stores/projectStore';
 import { PresetId, VISUAL_PRESETS } from '../../domain/presets';
 import { AspectRatio, ResolutionPreset } from '../../domain/export';
@@ -8,6 +8,7 @@ export const ControlPanel: React.FC = () => {
   const {
     animationMode,
     cameraMovement,
+    zoomLevel,
     activePresetId,
     durationSec,
     aspectRatio,
@@ -17,6 +18,7 @@ export const ControlPanel: React.FC = () => {
     videoTitle,
     setAnimationMode,
     setCameraMovement,
+    setZoomLevel,
     setPreset,
     setDurationSec,
     setAspectRatio,
@@ -124,7 +126,40 @@ export const ControlPanel: React.FC = () => {
         </section>
       )}
 
-      {/* 3. VIDEO TITLE */}
+      {/* 3. ZOOM LEVEL ADJUSTMENT */}
+      <section className="space-y-2">
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+            <ZoomIn className="w-4 h-4 text-cyan-400" /> Camera Zoom
+          </label>
+          <span className="text-[11px] font-mono text-cyan-400">
+            {zoomLevel >= 0.35 ? '+20% Closer' : zoomLevel >= 0.7 ? '+40% Closer' : 'Standard'}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-4 gap-1.5">
+          {[
+            { label: 'Far', val: 0.0 },
+            { label: '+20%', val: 0.4 },
+            { label: '+40%', val: 0.8 },
+            { label: '+60%', val: 1.2 },
+          ].map((z) => (
+            <button
+              key={z.val}
+              onClick={() => setZoomLevel(z.val)}
+              className={`py-2 rounded-xl text-xs font-bold border transition-all ${
+                Math.abs(zoomLevel - z.val) < 0.1
+                  ? 'bg-cyan-500/10 border-cyan-500 text-cyan-400'
+                  : 'bg-surface-elevated/40 border-surface-border text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              {z.label}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {/* 4. VIDEO TITLE */}
       <section className="space-y-1.5">
         <label className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
           <Type className="w-4 h-4 text-cyan-400" /> Video Title
@@ -138,7 +173,7 @@ export const ControlPanel: React.FC = () => {
         />
       </section>
 
-      {/* 4. ASPECT RATIO */}
+      {/* 5. ASPECT RATIO */}
       <section className="space-y-2">
         <label className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
           <Smartphone className="w-4 h-4 text-cyan-400" /> Aspect Ratio
@@ -171,7 +206,7 @@ export const ControlPanel: React.FC = () => {
         </div>
       </section>
 
-      {/* 5. DURATION */}
+      {/* 6. DURATION */}
       <section className="space-y-2">
         <label className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
           <Clock className="w-4 h-4 text-cyan-400" /> Duration
@@ -194,7 +229,7 @@ export const ControlPanel: React.FC = () => {
         </div>
       </section>
 
-      {/* 6. RESOLUTION & FPS */}
+      {/* 7. RESOLUTION & FPS */}
       <section className="space-y-2">
         <label className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
           <Sliders className="w-4 h-4 text-cyan-400" /> Resolution & FPS
@@ -224,7 +259,7 @@ export const ControlPanel: React.FC = () => {
         </div>
       </section>
 
-      {/* 7. SAFE GUIDES TOGGLE */}
+      {/* 8. SAFE GUIDES TOGGLE */}
       {aspectRatio === '9:16' && (
         <section className="pt-2 border-t border-slate-800">
           <label className="flex items-center justify-between cursor-pointer">
