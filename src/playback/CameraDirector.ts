@@ -1,41 +1,63 @@
-import { CameraState } from '../domain/camera';
+﻿import { CameraState } from '../domain/camera';
 import { NormalizedTrip } from '../domain/timeline';
 import { Scene } from '../domain/scene';
-import { calculateBearingDeg } from '../geo/bearing';
 import { sampleRouteAtProgress } from '../geo/interpolation';
 import { interpolateCameraState } from './CameraInterpolator';
+import { AnimationMode, CameraMovement } from '../stores/projectStore';
 
 export class CameraDirector {
-  /**
-   * Calculates ideal zoom level based on bounding box or route span.
-   */
   public static calculateOverviewZoom(bounds: [number, number, number, number]): number {
     const [minLng, minLat, maxLng, maxLat] = bounds;
     const latSpan = Math.max(0.001, maxLat - minLat);
     const lngSpan = Math.max(0.001, maxLng - minLng);
     const maxSpan = Math.max(latSpan, lngSpan);
 
-    if (maxSpan > 10) return 4.5;
-    if (maxSpan > 5) return 6;
-    if (maxSpan > 2) return 8;
-    if (maxSpan > 0.5) return 10;
-    if (maxSpan > 0.1) return 12;
+    if (maxSpan > 15) return 4;
+    if (maxSpan > 8) return 5.5;
+    if (maxSpan > 3) return 7;
+    if (maxSpan > 1) return 8.5;
+    if (maxSpan > 0.3) return 10.5;
+    if (maxSpan > 0.08) return 12.5;
     if (maxSpan > 0.02) return 14;
-    return 15.5;
+    return 15;
   }
 
-  /**
-   * Calculates camera state for a given route progress and active scene.
-   */
   public static evaluateCamera(
     trip: NormalizedTrip,
     progress: number,
     scene: Scene,
     sceneProgress: number,
-    defaultPitch: number = 50
+    defaultPitch: number = 50,
+    animationMode: AnimationMode = 'simple',
+    cameraMovement: CameraMovement = 'steady'
   ): CameraState {
     const overviewZoom = this.calculateOverviewZoom(trip.bounds);
 
+    // 1. SIMPLE 2D MODE (Ahn-Lab style: Flat, calm, no spinning)
+    if (animationMode === 'simple') {
+      if (cameraMovement === 'fixed') {
+        // Fixed overview: Map doesn't move, full path visible, dot moves along path
+        return {
+          center: trip.center,
+          zoom: Math.max(2, overviewZoom - 0.2),
+          pitch: 0,
+          bearing: 0,
+        };
+      }
+
+      // Steady Following: Flat 2D, centers gently on current position
+      const sample = sampleRouteAtProgress(trip.points, progress, true);
+      const followZoom = Math.max(overviewZoom + 1.5, Math.min(14.5, overviewZoom + 3));
+
+      return {
+        center: sample.coordinate,
+        zoom: followZoom,
+        pitch: cameraMovement === 'dynamic' ? 15 : 0,
+        bearing: 0,
+      };
+    }
+
+    // 2. CINEMATIC 3D MODE (Dramatic director, pitch, orbit)
     if (scene.type === 'intro-overview') {
       const startOverview: CameraState = {
         center: trip.center,
@@ -72,7 +94,6 @@ export class CameraDirector {
 
     if (scene.type === 'orbit-stop' && scene.associatedVisit) {
       const stopCoord = scene.associatedVisit.coordinate;
-      // Orbit around stop coord (rotation from -20 to +25 deg)
       const orbitBearing = (scene.associatedVisit.arrivalMs % 360) + sceneProgress * 45;
       return {
         center: stopCoord,
@@ -82,19 +103,15 @@ export class CameraDirector {
       };
     }
 
-    // Follow & Chase camera modes
+    // Follow & Chase in Cinematic mode
     const sample = sampleRouteAtProgress(trip.points, progress, true);
-    // Look-ahead coordinate along route to position marker lower-center
     const lookAheadProgress = Math.min(1, progress + 0.025);
     const lookAheadSample = sampleRouteAtProgress(trip.points, lookAheadProgress, true);
 
-    // Dynamic zoom based on speed: higher speed -> slightly zoom out
-    const speedZoomOffset = Math.max(-1.5, Math.min(0.5, 0.5 - (sample.speedKmh / 120)));
+    const speedZoomOffset = Math.max(-1.5, Math.min(0.5, 0.5 - sample.speedKmh / 120));
     const dynamicZoom = 14.8 + speedZoomOffset;
 
-    // Bearing aligned with movement direction
-    let targetBearing = calculateBearingDeg(sample.coordinate, lookAheadSample.coordinate);
-    if (isNaN(targetBearing)) targetBearing = sample.visualBearingDeg;
+    let targetBearing = sample.visualBearingDeg;
 
     return {
       center: lookAheadSample.coordinate,

@@ -1,19 +1,30 @@
-import { NormalizedTrip, PlaceVisit } from '../domain/timeline';
+﻿import { NormalizedTrip, PlaceVisit } from '../domain/timeline';
 import { PlaybackState, Scene } from '../domain/scene';
 import { sampleRouteAtProgress } from '../geo/interpolation';
 import { CameraDirector } from './CameraDirector';
 import { SceneDirector } from './SceneDirector';
+import { AnimationMode, CameraMovement } from '../stores/projectStore';
 
 export class TimelineEngine {
   private trip: NormalizedTrip;
   private totalDurationSec: number;
   private scenes: Scene[];
   private defaultPitch: number;
+  private animationMode: AnimationMode;
+  private cameraMovement: CameraMovement;
 
-  constructor(trip: NormalizedTrip, totalDurationSec: number = 30, defaultPitch: number = 50) {
+  constructor(
+    trip: NormalizedTrip,
+    totalDurationSec: number = 15,
+    defaultPitch: number = 0,
+    animationMode: AnimationMode = 'simple',
+    cameraMovement: CameraMovement = 'steady'
+  ) {
     this.trip = trip;
     this.totalDurationSec = Math.max(5, totalDurationSec);
     this.defaultPitch = defaultPitch;
+    this.animationMode = animationMode;
+    this.cameraMovement = cameraMovement;
     this.scenes = SceneDirector.generateScenes(trip, this.totalDurationSec);
   }
 
@@ -25,10 +36,6 @@ export class TimelineEngine {
     return this.totalDurationSec;
   }
 
-  /**
-   * Deterministically evaluates the complete state of the animation at any second t in [0..totalDurationSec].
-   * This is used identically by both the live Preview player and the Video Export renderer.
-   */
   public evaluate(videoTimeSec: number): PlaybackState {
     const clampedTime = Math.max(0, Math.min(this.totalDurationSec, videoTimeSec));
 
@@ -45,8 +52,11 @@ export class TimelineEngine {
     const sceneElapsed = clampedTime - activeScene.startSec;
     const sceneProgress = activeScene.durationSec > 0 ? Math.max(0, Math.min(1, sceneElapsed / activeScene.durationSec)) : 1;
 
-    // Map scene progress to route progress
-    const routeProgress = activeScene.startProgress + (activeScene.endProgress - activeScene.startProgress) * sceneProgress;
+    // Map time linearly in simple mode or via scene progress in cinematic mode
+    const routeProgress =
+      this.animationMode === 'simple'
+        ? clampedTime / this.totalDurationSec
+        : activeScene.startProgress + (activeScene.endProgress - activeScene.startProgress) * sceneProgress;
 
     // Sample route geometry
     const sample = sampleRouteAtProgress(this.trip.points, routeProgress, true);
@@ -57,10 +67,12 @@ export class TimelineEngine {
       routeProgress,
       activeScene,
       sceneProgress,
-      this.defaultPitch
+      this.defaultPitch,
+      this.animationMode,
+      this.cameraMovement
     );
 
-    // Determine active place visit (if near a stop)
+    // Determine active place visit
     let activeVisit: PlaceVisit | null = activeScene.associatedVisit || null;
     if (!activeVisit && this.trip.visits.length > 0) {
       for (const v of this.trip.visits) {

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import { X, Video, Download, CheckCircle2, Loader2, Sparkles } from 'lucide-react';
 import { useProjectStore } from '../../stores/projectStore';
@@ -13,7 +13,7 @@ interface ExportModalProps {
 }
 
 export const ExportModal: React.FC<ExportModalProps> = ({ map, onClose }) => {
-  const { activeTrip, preset, aspectRatio, resolution, getExportConfig } = useProjectStore();
+  const { activeTrip, preset, aspectRatio, resolution, getExportConfig, animationMode, cameraMovement } = useProjectStore();
   const {
     isExporting,
     progress,
@@ -57,6 +57,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({ map, onClose }) => {
         dim.width,
         dim.height,
         (p) => setProgress(p),
+        animationMode,
+        cameraMovement,
         ac.signal
       );
       setResult(res);
@@ -90,8 +92,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({ map, onClose }) => {
               <Video className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-white">Export Cinematic Video</h3>
-              <p className="text-xs text-slate-400">Deterministic Frame-by-Frame WebCodecs Rendering</p>
+              <h3 className="text-lg font-bold text-white">Export Video</h3>
+              <p className="text-xs text-slate-400">
+                Mode: <span className="font-semibold text-cyan-300 capitalize">{animationMode === 'simple' ? 'Simple (Clean 2D)' : 'Cinematic 3D'}</span> • {cameraMovement}
+              </p>
             </div>
           </div>
 

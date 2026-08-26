@@ -1,4 +1,4 @@
-import maplibregl from 'maplibre-gl';
+﻿import maplibregl from 'maplibre-gl';
 import { BufferTarget, CanvasSource, Mp4OutputFormat, Output, QUALITY_HIGH } from 'mediabunny';
 import { NormalizedTrip, RouteSample } from '../domain/timeline';
 import { VisualPreset } from '../domain/presets';
@@ -6,6 +6,7 @@ import { ExportConfig, ExportProgress } from '../domain/export';
 import { TimelineEngine } from '../playback/TimelineEngine';
 import { CompositeRenderer } from '../rendering/CompositeRenderer';
 import { MapFrameBarrier } from '../rendering/MapFrameBarrier';
+import { AnimationMode, CameraMovement } from '../stores/projectStore';
 
 export interface ExportResult {
   blob: Blob;
@@ -25,11 +26,19 @@ export class VideoExportEngine {
     width: number,
     height: number,
     onProgress: (progress: ExportProgress) => void,
+    animationMode: AnimationMode = 'simple',
+    cameraMovement: CameraMovement = 'steady',
     abortSignal?: AbortSignal
   ): Promise<ExportResult> {
     const startTimeMs = performance.now();
     const totalFrames = Math.round(config.durationSec * config.fps);
-    const engine = new TimelineEngine(trip, config.durationSec, preset.defaultPitch);
+    const engine = new TimelineEngine(
+      trip,
+      config.durationSec,
+      animationMode === 'simple' ? 0 : preset.defaultPitch,
+      animationMode,
+      cameraMovement
+    );
     const compositor = new CompositeRenderer(width, height);
     const compositeCanvas = compositor.getCanvas();
 

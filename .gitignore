@@ -12,6 +12,12 @@ dist
 dist-ssr
 *.local
 
+# User data files & personal location history
+Timeline.json
+Records.json
+*.jsonl
+test-runner.mjs
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

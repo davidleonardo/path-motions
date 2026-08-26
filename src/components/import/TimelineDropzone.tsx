@@ -1,18 +1,20 @@
-import React, { useState, useRef } from 'react';
-import { UploadCloud, FileJson, Sparkles, CheckCircle2, AlertCircle, Compass } from 'lucide-react';
+﻿import React, { useState, useRef } from 'react';
+import { UploadCloud, FileJson, Sparkles, CheckCircle2, AlertCircle, Compass, Calendar, Route } from 'lucide-react';
 import { normalizeTimelineJson } from '../../parsers/normalizeTimeline';
 import { DEMO_TRIPS } from '../../demo/demoTrips';
 import { useProjectStore } from '../../stores/projectStore';
+import { NormalizedTrip } from '../../domain/timeline';
 
 interface TimelineDropzoneProps {
   onClose?: () => void;
 }
 
 export const TimelineDropzone: React.FC<TimelineDropzoneProps> = ({ onClose }) => {
-  const { setTrips, selectTrip, activeTrip } = useProjectStore();
+  const { setTrips, selectTrip, activeTrip, trips } = useProjectStore();
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [parsedTrips, setParsedTrips] = useState<NormalizedTrip[] | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleProcessFile = async (file: File) => {
@@ -29,7 +31,8 @@ export const TimelineDropzone: React.FC<TimelineDropzoneProps> = ({ onClose }) =
       }
 
       setTrips(result.trips);
-      if (onClose) onClose();
+      setParsedTrips(result.trips);
+      selectTrip(result.trips[0].id);
     } catch (err: any) {
       setErrorMsg(err.message || 'Failed to parse JSON file.');
     } finally {
@@ -45,11 +48,19 @@ export const TimelineDropzone: React.FC<TimelineDropzoneProps> = ({ onClose }) =
     }
   };
 
+  const handleSelectTrip = (tripId: string) => {
+    selectTrip(tripId);
+    if (onClose) onClose();
+  };
+
   const handleSelectDemo = (tripIndex: number) => {
     setTrips(DEMO_TRIPS);
+    setParsedTrips(DEMO_TRIPS);
     selectTrip(DEMO_TRIPS[tripIndex].id);
     if (onClose) onClose();
   };
+
+  const activeTripList = parsedTrips || (trips.length > 2 ? trips : null);
 
   return (
     <div className="max-w-2xl w-full mx-auto p-6 space-y-6">
@@ -59,7 +70,7 @@ export const TimelineDropzone: React.FC<TimelineDropzoneProps> = ({ onClose }) =
           Import Google Timeline or Location Records
         </h2>
         <p className="text-sm text-slate-400 max-w-md mx-auto">
-          Convert your location export into cinematic travel videos. All calculations occur locally in your browser.
+          Supports on-device Google Timeline JSON (with semanticSegments, timelinePath, or visits) and legacy Takeout Records.
         </p>
       </div>
 
@@ -96,7 +107,7 @@ export const TimelineDropzone: React.FC<TimelineDropzoneProps> = ({ onClose }) =
         </h3>
         <p className="text-xs text-slate-400 flex items-center gap-1.5 mt-1">
           <FileJson className="w-3.5 h-3.5 text-slate-400" />
-          <span>Supports on-device Google Timeline exports & legacy Takeout Records</span>
+          <span>Auto-detects semanticSegments, timelinePath, visits, and decimal coordinates</span>
         </p>
       </div>
 
@@ -104,6 +115,52 @@ export const TimelineDropzone: React.FC<TimelineDropzoneProps> = ({ onClose }) =
         <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-center gap-3 text-rose-400 text-sm">
           <AlertCircle className="w-5 h-5 flex-shrink-0" />
           <span>{errorMsg}</span>
+        </div>
+      )}
+
+      {/* Discovered Trips from User Upload */}
+      {activeTripList && activeTripList.length > 0 && (
+        <div className="space-y-3 pt-2 border-t border-slate-800">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-1.5">
+              <Route className="w-4 h-4" /> Detected Journeys in File ({activeTripList.length})
+            </span>
+            <span className="text-xs text-slate-500">Select any trip to visualize</span>
+          </div>
+
+          <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+            {activeTripList.slice(0, 20).map((trip) => (
+              <button
+                key={trip.id}
+                onClick={() => handleSelectTrip(trip.id)}
+                className={`w-full flex items-center justify-between p-3.5 rounded-xl border text-left transition-all ${
+                  activeTrip?.id === trip.id
+                    ? 'bg-cyan-500/10 border-cyan-500 text-cyan-300'
+                    : 'bg-surface-elevated/40 border-surface-border text-slate-200 hover:bg-surface-elevated'
+                }`}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-8 h-8 rounded-lg bg-surface-elevated flex items-center justify-center text-slate-400 flex-shrink-0">
+                    <Calendar className="w-4 h-4" />
+                  </div>
+                  <div className="truncate">
+                    <div className="text-xs font-bold truncate">{trip.title}</div>
+                    <div className="text-[11px] text-slate-400">
+                      {(trip.totalDistanceM / 1000).toFixed(1)} km • {trip.points.length} GPS points
+                    </div>
+                  </div>
+                </div>
+
+                {activeTrip?.id === trip.id ? (
+                  <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0 ml-2" />
+                ) : (
+                  <span className="text-xs font-semibold text-cyan-400 px-2.5 py-1 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex-shrink-0 ml-2">
+                    Open
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 

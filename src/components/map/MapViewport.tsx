@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+﻿import React, { useEffect, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import { useProjectStore } from '../../stores/projectStore';
 import { usePlaybackStore } from '../../stores/playbackStore';
@@ -15,20 +15,26 @@ export const MapViewport: React.FC<MapViewportProps> = ({ onMapReady }) => {
   const mapRef = useRef<maplibregl.Map | null>(null);
   const hudCanvasRef = useRef<HTMLCanvasElement>(null);
 
-  const { activeTrip, preset, durationSec, aspectRatio, showSocialGuides } = useProjectStore();
+  const { activeTrip, preset, durationSec, aspectRatio, showSocialGuides, animationMode, cameraMovement } = useProjectStore();
   const { isPlaying, currentTimeSec, playbackSpeed, setCurrentTimeSec, setCurrentState, setIsPlaying } = usePlaybackStore();
 
   const [engine, setEngine] = useState<TimelineEngine | null>(null);
   const animFrameRef = useRef<number | null>(null);
   const lastTimeMsRef = useRef<number>(performance.now());
 
-  // Initialize TimelineEngine whenever activeTrip, durationSec, or preset changes
+  // Initialize TimelineEngine
   useEffect(() => {
     if (activeTrip) {
-      const eng = new TimelineEngine(activeTrip, durationSec, preset.defaultPitch);
+      const eng = new TimelineEngine(
+        activeTrip,
+        durationSec,
+        animationMode === 'simple' ? 0 : preset.defaultPitch,
+        animationMode,
+        cameraMovement
+      );
       setEngine(eng);
     }
-  }, [activeTrip, durationSec, preset]);
+  }, [activeTrip, durationSec, preset, animationMode, cameraMovement]);
 
   // Initialize MapLibre map instance
   useEffect(() => {
@@ -44,7 +50,7 @@ export const MapViewport: React.FC<MapViewportProps> = ({ onMapReady }) => {
       style: preset.basemapStyle,
       center: [activeTrip.center.lng, activeTrip.center.lat],
       zoom: 12,
-      pitch: preset.defaultPitch,
+      pitch: animationMode === 'simple' ? 0 : preset.defaultPitch,
       bearing: 0,
       preserveDrawingBuffer: true,
       attributionControl: false,
@@ -88,21 +94,23 @@ export const MapViewport: React.FC<MapViewportProps> = ({ onMapReady }) => {
         },
       });
 
-      // Outer glow layer
-      map.addLayer({
-        id: 'route-glow',
-        type: 'line',
-        source: 'route-revealed',
-        layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: {
-          'line-color': preset.routeColor,
-          'line-width': preset.routeWidth * 3.5,
-          'line-opacity': 0.35,
-          'line-blur': 4,
-        },
-      });
+      // Outer glow layer (only in cinematic mode)
+      if (animationMode === 'cinematic') {
+        map.addLayer({
+          id: 'route-glow',
+          type: 'line',
+          source: 'route-revealed',
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: {
+            'line-color': preset.routeColor,
+            'line-width': preset.routeWidth * 3.5,
+            'line-opacity': 0.35,
+            'line-blur': 4,
+          },
+        });
+      }
 
-      // Main vibrant route line
+      // Main route line
       map.addLayer({
         id: 'route-main',
         type: 'line',
@@ -130,7 +138,7 @@ export const MapViewport: React.FC<MapViewportProps> = ({ onMapReady }) => {
         type: 'circle',
         source: 'route-marker',
         paint: {
-          'circle-radius': 14,
+          'circle-radius': 12,
           'circle-color': preset.routeColor,
           'circle-opacity': 0.4,
           'circle-blur': 0.8,
@@ -142,14 +150,14 @@ export const MapViewport: React.FC<MapViewportProps> = ({ onMapReady }) => {
         type: 'circle',
         source: 'route-marker',
         paint: {
-          'circle-radius': 6.5,
+          'circle-radius': 6,
           'circle-color': preset.markerColor,
           'circle-stroke-width': 2.5,
           'circle-stroke-color': preset.routeColor,
         },
       });
 
-      // Initial jump
+      // Initial camera jump
       if (engine) {
         const initialState = engine.evaluate(0);
         map.jumpTo({
@@ -165,7 +173,7 @@ export const MapViewport: React.FC<MapViewportProps> = ({ onMapReady }) => {
       map.remove();
       mapRef.current = null;
     };
-  }, [activeTrip, preset.basemapStyle]);
+  }, [activeTrip, preset.basemapStyle, animationMode]);
 
   // Playback requestAnimationFrame render loop
   useEffect(() => {
@@ -255,7 +263,6 @@ export const MapViewport: React.FC<MapViewportProps> = ({ onMapReady }) => {
     };
   }, [engine, isPlaying, playbackSpeed, durationSec, preset, aspectRatio, showSocialGuides]);
 
-  // Adjust aspect ratio container styling
   const aspectClass =
     aspectRatio === '9:16'
       ? 'aspect-[9/16] max-h-[82vh]'
@@ -268,10 +275,8 @@ export const MapViewport: React.FC<MapViewportProps> = ({ onMapReady }) => {
       <div
         className={`relative overflow-hidden rounded-2xl shadow-2xl border border-surface-border bg-black transition-all ${aspectClass}`}
       >
-        {/* Map Container */}
         <div ref={mapContainerRef} className="absolute inset-0 w-full h-full" />
 
-        {/* HUD Overlay Canvas */}
         <canvas
           ref={hudCanvasRef}
           width={1920}
